@@ -14,6 +14,8 @@ dropdown_values = [
     'AS', 'EY', 'AD', 'AT', 'EX', 'AP', 'FX', 'AQ'
 ]  # Complete list of dropdown values
 
+# dropdown_values = ['Z005']
+
 # Define the list of dates to iterate over
 dates_list = ["7 - 2024", "6 - 2024", "5 - 2024", "4 - 2024", "3 - 2024", "2 - 2024", "1 - 2024",
     "12 - 2023", "11 - 2023", "10 - 2023", "9 - 2023", "8 - 2023", "7 - 2023", "6 - 2023", 
@@ -26,6 +28,8 @@ dates_list = ["7 - 2024", "6 - 2024", "5 - 2024", "4 - 2024", "3 - 2024", "2 - 2
     "5 - 2020", "4 - 2020", "3 - 2020", "2 - 2020", "1 - 2020",
     "12 - 2019", "11 - 2019", "10 - 2019", "9 - 2019", "8 - 2019", "7 - 2019", "6 - 2019", 
     "5 - 2019", "4 - 2019", "3 - 2019", "2 - 2019", "1 - 2019"]  
+
+# dates_list = ["1 - 2024"]
 
 # Base URL for the form
 form_url = 'https://ws1ext.osfi-bsif.gc.ca/WebApps/FINDAT/DTIBanks.aspx?T=0&LANG=E'
@@ -69,6 +73,39 @@ def sanitize_filename(text):
     return re.sub(r'[^\w\-_\. ]', '_', text)
 
 
+# def process_report(s, report_id, value):
+#     """Fetches and processes the report data."""
+#     report_url = f'https://ws1ext.osfi-bsif.gc.ca/WebApps/Temp/{report_id}FinancialData.aspx'
+#     r = s.get(report_url)
+#     soup = BeautifulSoup(r.content, 'html.parser')
+
+#     # Extract <p> values
+#     p_tags = [p.get_text(strip=True) for p in soup.find_all('p')]
+
+#     # Extract table data
+#     table = soup.find('table')  # Adjust selector if necessary
+#     if table:
+#         df = pd.read_html(str(table))[0]
+#         df1 = pd.read_html(str(table))[1]
+#         print(df1)
+
+#         # Add the <p> values as a new column in the DataFrame
+#         df['P_Tags'] = ', '.join(p_tags)
+
+#         # Save the DataFrame to a CSV file
+#         if len(p_tags) >= 2:
+#             p1 = sanitize_filename(p_tags[0])
+#             p2 = sanitize_filename(p_tags[1])
+#             file_name = f'OSFI_{p1}_{p2}.csv'
+#         else:
+#             file_name = 'financial_data_unknown.csv'  
+
+#         file_path = os.path.join('osfi_spreadsheets_v2', file_name)
+#         df.to_csv(file_path, index=False)
+#         print(f"Data saved to {file_path}")
+#     else:
+       # print("No table found on the page.")
+
 def process_report(s, report_id, value):
     """Fetches and processes the report data."""
     report_url = f'https://ws1ext.osfi-bsif.gc.ca/WebApps/Temp/{report_id}FinancialData.aspx'
@@ -78,60 +115,74 @@ def process_report(s, report_id, value):
     # Extract <p> values
     p_tags = [p.get_text(strip=True) for p in soup.find_all('p')]
 
-    # Extract table data
-    table = soup.find('table')  # Adjust selector if necessary
-    if table:
-        df = pd.read_html(str(table))[0]
+    # Extract all table data
+    tables = pd.read_html(str(soup))  # Extract all tables as a list of DataFrames
 
-        # Add the <p> values as a new column in the DataFrame
-        df['P_Tags'] = ', '.join(p_tags)
 
-        # Save the DataFrame to a CSV file
+    if len(tables) >= 2:
+        # Combine the two tables into one
+        # df_combined = pd.concat([tables[0], tables[1]], ignore_index=True)
+        df_combined = pd.concat([d.T.reset_index().T for d in [tables[0], tables[1]]])
+        # Add the <p> values as a new column in the combined DataFrame
+        df_combined['P_Tags'] = ', '.join(p_tags)
+
+        # Save the combined DataFrame to a CSV file
         if len(p_tags) >= 2:
             p1 = sanitize_filename(p_tags[0])
             p2 = sanitize_filename(p_tags[1])
             file_name = f'OSFI_{p1}_{p2}.csv'
         else:
-            file_name = 'financial_data_unknown.csv'  
+            file_name = 'financial_data_unknown_combined.csv'
 
-        file_path = os.path.join('osfi_spreadsheets_v2', file_name)
-        df.to_csv(file_path, index=False)
-        print(f"Data saved to {file_path}")
+        file_path = os.path.join('osfi_spreadsheets', file_name)
+        df_combined.to_csv(file_path, index=False)
+        print(f"Combined data saved to {file_path}")
     else:
-        print("No table found on the page.")
+        print("Less than 2 tables found on the page.")
 
-# Main loop to process all values and dates
-# for value in dropdown_values:
-#     print(f"Processing value: {value}")
 
-#     # Get the initial page to fetch VIEWSTATE and other required data
-#     r = s.get(form_url)
-#     soup = BeautifulSoup(r.content, 'html.parser')
-#     viewstate_data = get_viewstate_data(soup)
-    
-#     for date in dates_list:
-#         print(f"Checking date: {date} for value: {value}")
-#         report_id = submit_form(s, viewstate_data, value, date)
-        
-#         if report_id:
-#             print(f"Success: Processed value {value} and date {date}")
-#             process_report(s, report_id, value)
-#         else:
-#             print(f"Skipping: Date {date} not available for value {value}")
 
-#     print(f"Finished processing value: {value}")
+def simulate_dropdown_selection(s, viewstate_data, value):
+    """Simulates selecting a dropdown item to trigger a postback and get updated viewstate."""
+    data = {
+        '__VIEWSTATE': viewstate_data['__VIEWSTATE'],
+        '__VIEWSTATEGENERATOR': viewstate_data['__VIEWSTATEGENERATOR'],
+        '__EVENTVALIDATION': viewstate_data['__EVENTVALIDATION'],
+        '__EVENTTARGET': 'DTIWebPartManager$gwpDTIBankControl1$DTIBankControl1$institutionTypeCriteria$institutionsDropDownList',
+        '__EVENTARGUMENT': '',
+        'DTIWebPartManager$gwpDTIBankControl1$DTIBankControl1$institutionTypeCriteria$institutionType': 'type1RadioButton',
+        'DTIWebPartManager$gwpDTIBankControl1$DTIBankControl1$institutionTypeCriteria$institutionsDropDownList': value,
+        'DTIWebPartManager$gwpDTIBankControl1$DTIBankControl1$dtiReportCriteria$Frequency': 'monthlyRadioButton',
+        'DTIWebPartManager$gwpDTIBankControl1$DTIBankControl1$dtiReportCriteria$monthlyDropDownList': 'DTI-1'
+    }
+
+    # This simulates selecting the dropdown value and triggering the postback.
+    # We need this so that the updated viewstate data can be extracted.
+    response = s.post(form_url, data=data)
+    return response
 
 
 for value in dropdown_values:
     print(f"Processing value: {value}")
     
+    # Get the initial page to fetch VIEWSTATE and other required data for each dropdown value
+    r = s.get(form_url)
+    soup = BeautifulSoup(r.content, 'html.parser')
+    viewstate_data = get_viewstate_data(soup)
+    
+    # Simulate the dropdown selection for this value
+    print(f"Simulating dropdown selection for value: {value}")
+    r = simulate_dropdown_selection(s, viewstate_data, value)
+    soup = BeautifulSoup(r.content, 'html.parser')
+
+    # Extract updated VIEWSTATE and EVENTVALIDATION after the dropdown interaction
+    viewstate_data = get_viewstate_data(soup)
+    
+    # Now submit the form for each date
     for date in dates_list:
-        # Get the initial page to fetch VIEWSTATE and other required data for each date
-        r = s.get(form_url)
-        soup = BeautifulSoup(r.content, 'html.parser')
-        viewstate_data = get_viewstate_data(soup)
-        
         print(f"Checking date: {date} for value: {value}")
+
+        # Submit the form with the current value and date
         report_id = submit_form(s, viewstate_data, value, date)
         
         if report_id:
